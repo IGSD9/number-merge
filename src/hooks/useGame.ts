@@ -79,12 +79,14 @@ export function useGame() {
     board: GameState["board"];
     score: number;
     bestScore: number;
+    queuedNext: GameState["nextPiece"];
   } | null>(null);
   const mergeChainRef = useRef<{
     board: GameState["board"];
     score: number;
     bestScore: number;
     priorityPos?: CellPosition;
+    queuedNext: GameState["nextPiece"];
   } | null>(null);
   const currentMergeStepRef = useRef<MergeStep | null>(null);
   const fallHandledRef = useRef(false);
@@ -173,11 +175,14 @@ export function useGame() {
   }, [gameState?.isGameOver, gameState?.score, gameState?.bestScore]);
 
   const finishDropCycle = useCallback(
-    (board: GameState["board"], score: number, bestScore: number) => {
+    (
+      board: GameState["board"],
+      score: number,
+      bestScore: number,
+      queuedNext: GameState["nextPiece"],
+    ) => {
       mergeChainRef.current = null;
       const isGameOver = resolveGameOver(board);
-      const promoted = generateSmartTile(board);
-      const newNext = isGameOver ? null : generateSmartTile(board);
       const nextBestScore = Math.max(bestScore, score);
 
       if (nextBestScore > bestScore) {
@@ -186,6 +191,10 @@ export function useGame() {
 
       setGameState((prev) => {
         if (!prev) return prev;
+
+        const promoted = queuedNext ?? generateSmartTile(board);
+        const newNext = isGameOver ? null : generateSmartTile(board);
+
         return {
           ...prev,
           board,
@@ -212,7 +221,12 @@ export function useGame() {
     chain.priorityPos = undefined;
 
     if (!step) {
-      finishDropCycle(chain.board, chain.score, chain.bestScore);
+      finishDropCycle(
+        chain.board,
+        chain.score,
+        chain.bestScore,
+        chain.queuedNext,
+      );
       return;
     }
 
@@ -242,6 +256,7 @@ export function useGame() {
         board: gameState.board,
         score: gameState.score,
         bestScore: gameState.bestScore,
+        queuedNext: gameState.nextPiece,
       };
 
       setFallingAnimation({
@@ -288,6 +303,7 @@ export function useGame() {
       score: pending.score,
       bestScore: pending.bestScore,
       priorityPos: { row: placed.row, col: pending.tile.col },
+      queuedNext: pending.queuedNext,
     };
 
     setGameState((prev) =>
@@ -317,6 +333,7 @@ export function useGame() {
       board,
       score: nextScore,
       bestScore: nextBestScore,
+      queuedNext: chain.queuedNext,
     };
 
     currentMergeStepRef.current = null;
