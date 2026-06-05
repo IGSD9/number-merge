@@ -10,6 +10,7 @@ import { HomeConfirmModal } from "@/components/game/HomeConfirmModal";
 import { ScorePanel } from "@/components/game/ScorePanel";
 import { ScoreRegisterModal } from "@/components/game/ScoreRegisterModal";
 import { useGame } from "@/hooks/useGame";
+import { useGameLayout } from "@/hooks/useGameLayout";
 
 export function GameScreen() {
   const router = useRouter();
@@ -29,6 +30,7 @@ export function GameScreen() {
   } = useGame();
   const [showHomeConfirm, setShowHomeConfirm] = useState(false);
   const [showScoreRegister, setShowScoreRegister] = useState(false);
+  const layout = useGameLayout(!!gameState?.nextPiece);
 
   if (isLoading || !gameState) {
     return <div className="min-h-screen bg-gray-950" />;
@@ -94,13 +96,17 @@ export function GameScreen() {
         </div>
       )}
 
-      <div className="flex w-full max-w-sm flex-col items-stretch gap-6">
+      <div
+        className="mx-auto flex flex-col gap-6"
+        style={{ width: layout.totalWidth }}
+      >
         <ScorePanel score={gameState.score} bestScore={gameState.bestScore} />
 
         <GameBoard
           board={gameState.board}
           currentPiece={gameState.currentPiece}
           nextPiece={gameState.nextPiece}
+          layout={layout}
           fallingAnimation={fallingAnimation}
           mergeAnimation={mergeAnimation}
           onColumnTap={dropAtColumn}

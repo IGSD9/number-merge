@@ -3,6 +3,8 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { MergeAnimationOverlay } from "@/components/game/MergeAnimationOverlay";
 import { Tile } from "@/components/game/Tile";
+import { GAME_LAYOUT } from "@/lib/game/layout";
+import type { GameLayout } from "@/lib/game/layout";
 import {
   canPlaceInColumn,
   DEFAULT_DROP_COL,
@@ -25,6 +27,7 @@ interface GameBoardProps {
   nextPiece: TileType | null;
   fallingAnimation: FallingAnimation | null;
   mergeAnimation: MergeAnimation | null;
+  layout: GameLayout;
   onColumnTap: (col: number) => void;
   onFallComplete: () => void;
   onMergeAnimationComplete: () => void;
@@ -32,26 +35,10 @@ interface GameBoardProps {
   isGameOver: boolean;
 }
 
-const BOARD_PADDING = 8;
-const GAP = 4;
+const { BOARD_PADDING, GAP } = GAME_LAYOUT;
 const PREVIEW_ROWS = 1;
 const FALL_BASE_MS = 140;
 const FALL_PER_ROW_MS = 40;
-const SCREEN_PADDING = 32;
-const NEXT_GAP = 8;
-const NEXT_MIN_WIDTH = 44;
-
-function calcCellSize(viewportWidth: number, hasNext: boolean): number {
-  const nextReserve = hasNext ? NEXT_MIN_WIDTH + NEXT_GAP : 0;
-  const available =
-    viewportWidth -
-    SCREEN_PADDING -
-    nextReserve -
-    BOARD_PADDING * 2 -
-    (GRID_COLS - 1) * GAP;
-  const fromWidth = Math.floor(available / GRID_COLS);
-  return Math.min(Math.max(fromWidth, 44), 64);
-}
 
 interface BoardCellProps {
   pos: CellPosition;
@@ -103,35 +90,19 @@ export function GameBoard({
   nextPiece,
   fallingAnimation,
   mergeAnimation,
+  layout,
   onColumnTap,
   onFallComplete,
   onMergeAnimationComplete,
   isAnimating,
   isGameOver,
 }: GameBoardProps) {
-  const [cellSize, setCellSize] = useState(56);
+  const { cellSize, boardWidth, nextPieceSize, totalWidth } = layout;
   const [fallOffset, setFallOffset] = useState(0);
   const onFallCompleteRef = useRef(onFallComplete);
   const onTapRef = useRef(onColumnTap);
   onFallCompleteRef.current = onFallComplete;
   onTapRef.current = onColumnTap;
-
-  useEffect(() => {
-    let frame = 0;
-    const updateSize = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        setCellSize(calcCellSize(window.innerWidth, !!nextPiece));
-      });
-    };
-
-    updateSize();
-    window.addEventListener("resize", updateSize);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("resize", updateSize);
-    };
-  }, [nextPiece]);
 
   useEffect(() => {
     if (!fallingAnimation) {
@@ -167,8 +138,6 @@ export function GameBoard({
       ? getStackLandingRow(board, DEFAULT_DROP_COL)
       : null;
 
-  const boardWidth =
-    BOARD_PADDING * 2 + GRID_COLS * cellSize + (GRID_COLS - 1) * GAP;
   const boardHeight =
     BOARD_PADDING * 2 + GRID_ROWS * cellSize + (GRID_ROWS - 1) * GAP;
   const previewHeight = PREVIEW_ROWS * cellSize + (PREVIEW_ROWS - 1) * GAP;
@@ -184,10 +153,11 @@ export function GameBoard({
     [mergeAnimation],
   );
 
-  const nextPieceSize = Math.max(cellSize * 0.75, NEXT_MIN_WIDTH);
-
   return (
-    <div className="mx-auto flex w-full max-w-full touch-manipulation items-start justify-center gap-2">
+    <div
+      className="mx-auto flex touch-manipulation items-start gap-2"
+      style={{ width: totalWidth }}
+    >
       <div className="shrink-0" style={{ width: boardWidth }}>
         <div
           className="relative mb-2"
