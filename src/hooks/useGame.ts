@@ -8,7 +8,6 @@ import {
   resolveAllAutoMerges,
   type MergeStep,
 } from "@/lib/game/autoMerge";
-import { checkStackGameOver } from "@/lib/game/gameOver";
 import { createNewGameState } from "@/lib/game/initGame";
 import {
   clearGameSession,
@@ -19,10 +18,12 @@ import {
   applyMergeStepWithGravity,
   canPlaceAnywhere,
   canPlaceInColumn,
+  createMergeOnTopStep,
   DEFAULT_DROP_COL,
   generateSmartTile,
   getStackLandingRow,
   placeDroppedPiece,
+  resetSpawnGuarantee,
 } from "@/lib/game/spawn";
 import { buildRegisterMessage } from "@/lib/score/registerMessage";
 import {
@@ -49,8 +50,11 @@ function saveBestScore(score: number): void {
   localStorage.setItem(BEST_SCORE_KEY, String(score));
 }
 
-function resolveGameOver(board: GameState["board"]): boolean {
-  return checkStackGameOver(board) || !canPlaceAnywhere(board);
+function resolveGameOver(
+  board: GameState["board"],
+  nextTileValue: number,
+): boolean {
+  return !canPlaceAnywhere(board, nextTileValue);
 }
 
 function toMergeAnimation(step: MergeStep): MergeAnimation {
@@ -60,6 +64,20 @@ function toMergeAnimation(step: MergeStep): MergeAnimation {
       col: pos.col,
       value: step.sourceValue,
     })),
+    centerRow: step.center.row,
+    centerCol: step.center.col,
+    mergedValue: step.mergedValue,
+    targetRow: step.target.row,
+    targetCol: step.target.col,
+  };
+}
+
+function toMergeOnTopAnimation(step: MergeStep, col: number): MergeAnimation {
+  return {
+    sources: [
+      { row: -1, col, value: step.sourceValue },
+      { row: 0, col, value: step.sourceValue },
+    ],
     centerRow: step.center.row,
     centerCol: step.center.col,
     mergedValue: step.mergedValue,
@@ -154,7 +172,8 @@ export function useGame() {
       queuedNext: GameState["nextPiece"],
     ) => {
       mergeChainRef.current = null;
-      const isGameOver = resolveGameOver(board);
+      const promoted = queuedNext ?? generateSmartTile(board);
+      const isGameOver = resolveGameOver(board, promoted.value);
       const nextBestScore = Math.max(bestScore, score);
 
       if (nextBestScore > bestScore) {
@@ -164,7 +183,6 @@ export function useGame() {
       setGameState((prev) => {
         if (!prev) return prev;
 
-        const promoted = queuedNext ?? generateSmartTile(board);
         const newNext = isGameOver ? null : generateSmartTile(board);
 
         return {
@@ -229,11 +247,30 @@ export function useGame() {
           pending.tile.col,
         );
         if (placed) {
-          const { board, scoreGain } = resolveAllAutoMerges(placed.board);
+          let board = placed.board;
+          let extraScore = 0;
+
+          if (placed.kind === "mergeOnTop") {
+            const step = createMergeOnTopStep(
+              placed.board,
+              pending.tile.col,
+              placed.incomingTile,
+            );
+            if (step) {
+              const merged = applyMergeStepWithGravity(board, step);
+              board = merged.board;
+              extraScore = merged.scoreGain;
+            }
+          }
+
+          const { board: resolvedBoard, scoreGain } = resolveAllAutoMerges(board);
           finishDropCycle(
-            board,
-            pending.score + scoreGain,
-            Math.max(pending.bestScore, pending.score + scoreGain),
+            resolvedBoard,
+            pending.score + extraScore + scoreGain,
+            Math.max(
+              pending.bestScore,
+              pending.score + extraScore + scoreGain,
+            ),
             pending.queuedNext,
           );
           return;
@@ -320,9 +357,10 @@ export function useGame() {
       ) {
         return;
       }
-      if (!canPlaceInColumn(gameState.board, col)) return;
+      const dropValue = gameState.currentPiece.tile.value;
+      if (!canPlaceInColumn(gameState.board, col, dropValue)) return;
 
-      const targetRow = getStackLandingRow(gameState.board, col);
+      const targetRow = getStackLandingRow(gameState.board, col, dropValue);
       if (targetRow === null) return;
 
       fallHandledRef.current = false;
@@ -370,6 +408,31 @@ export function useGame() {
       setGameState((prev) =>
         prev ? { ...prev, isAnimating: false } : prev,
       );
+      return;
+    }
+
+    if (placed.kind === "mergeOnTop") {
+      const step = createMergeOnTopStep(
+        placed.board,
+        pending.tile.col,
+        placed.incomingTile,
+      );
+      if (!step) {
+        setGameState((prev) =>
+          prev ? { ...prev, isAnimating: false } : prev,
+        );
+        return;
+      }
+
+      mergeChainRef.current = {
+        board: placed.board,
+        score: pending.score,
+        bestScore: pending.bestScore,
+        queuedNext: pending.queuedNext,
+      };
+      mergeHandledRef.current = false;
+      currentMergeStepRef.current = step;
+      setMergeAnimation(toMergeOnTopAnimation(step, pending.tile.col));
       return;
     }
 
@@ -425,6 +488,7 @@ export function useGame() {
 
   const restart = useCallback(() => {
     clearGameSession();
+    resetSpawnGuarantee();
     setFallingAnimation(null);
     setMergeAnimation(null);
     pendingDropRef.current = null;

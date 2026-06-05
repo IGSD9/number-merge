@@ -7,10 +7,12 @@ import {
   type TileValue,
 } from "@/types/game";
 import { cloneBoard } from "@/lib/game/board";
+import type { MergeStep } from "@/lib/game/autoMerge";
 import { getNextMergeStep, applyMergeStep } from "@/lib/game/autoMerge";
 import { applyDownwardGravity } from "@/lib/game/gravity";
+import { calculateMergedValue } from "@/lib/game/merge";
 
-export function getBoardMaxValue(board: Board): TileValue {
+export function getBoardMaxValue(board: Board): number {
   let max = 2;
   for (let row = 0; row < GRID_ROWS; row++) {
     for (let col = 0; col < GRID_COLS; col++) {
@@ -18,7 +20,7 @@ export function getBoardMaxValue(board: Board): TileValue {
       if (tile && tile.value > max) max = tile.value;
     }
   }
-  return max as TileValue;
+  return max;
 }
 
 /** ボード上の最大値までの2の累乗のみ出現可能 */
@@ -26,15 +28,15 @@ export function getAllowedSpawnValues(board: Board): TileValue[] {
   const maxOnBoard = getBoardMaxValue(board);
   const values: TileValue[] = [];
   let v = 2;
-  while (v <= maxOnBoard && v <= 2048) {
+  while (v <= maxOnBoard) {
     values.push(v as TileValue);
     v *= 2;
   }
   return values;
 }
 
-function countBoardValues(board: Board): Map<TileValue, number> {
-  const counts = new Map<TileValue, number>();
+function countBoardValues(board: Board): Map<number, number> {
+  const counts = new Map<number, number>();
   for (let row = 0; row < GRID_ROWS; row++) {
     for (let col = 0; col < GRID_COLS; col++) {
       const tile = board[row][col];
@@ -43,6 +45,37 @@ function countBoardValues(board: Board): Map<TileValue, number> {
     }
   }
   return counts;
+}
+
+/** ボード最大より小さい孤立タイル（1個だけ残っている数字） */
+export function getStrandedSmallValues(board: Board): number[] {
+  const max = getBoardMaxValue(board);
+  const counts = countBoardValues(board);
+
+  return [...counts.entries()]
+    .filter(([value, count]) => count === 1 && value < max)
+    .map(([value]) => value)
+    .sort((a, b) => a - b);
+}
+
+let spawnGuarantee: { value: number; remaining: number } | null = null;
+
+function syncSpawnGuarantee(board: Board): void {
+  const stranded = getStrandedSmallValues(board);
+
+  if (stranded.length === 0) {
+    spawnGuarantee = null;
+    return;
+  }
+
+  const target = stranded[0];
+  if (!spawnGuarantee || spawnGuarantee.value !== target) {
+    spawnGuarantee = { value: target, remaining: 2 };
+  }
+}
+
+export function resetSpawnGuarantee(): void {
+  spawnGuarantee = null;
 }
 
 function pickWeightedValue(weights: { value: TileValue; weight: number }[]): TileValue {
@@ -57,19 +90,36 @@ function pickWeightedValue(weights: { value: TileValue; weight: number }[]): Til
   return weights[weights.length - 1].value;
 }
 
+function createTile(value: number, position: CellPosition): Tile {
+  return {
+    id: crypto.randomUUID(),
+    value: value as TileValue,
+    position,
+  };
+}
+
 /**
  * 出現数字:
  * - 最初は2のみ
  * - ボード最大値が上がるたびにその数字まで解禁
  * - 大きい数字ほど出やすく、小さい数字は出にくい
+ * - 孤立した小さい数字がある場合、同じ数字を最低2個出す
  */
 export function generateSmartTile(
   board: Board,
   position: CellPosition = { row: 0, col: 0 },
 ): Tile {
+  syncSpawnGuarantee(board);
+
+  if (spawnGuarantee && spawnGuarantee.remaining > 0) {
+    spawnGuarantee.remaining--;
+    return createTile(spawnGuarantee.value, position);
+  }
+
   const allowed = getAllowedSpawnValues(board);
   const maxOnBoard = getBoardMaxValue(board);
   const boardCounts = countBoardValues(board);
+  const stranded = new Set(getStrandedSmallValues(board));
   const maxLog = Math.log2(maxOnBoard);
 
   const weights = allowed.map((value) => {
@@ -78,22 +128,27 @@ export function generateSmartTile(
     if (boardCounts.has(value)) {
       weight *= 1.6;
     }
+    if (stranded.has(value)) {
+      weight *= 4;
+    }
     return { value, weight };
   });
 
   const selected = pickWeightedValue(weights);
-
-  return {
-    id: crypto.randomUUID(),
-    value: selected,
-    position,
-  };
+  return createTile(selected, position);
 }
 
-/** 列の最上段タイルの直上に着地。空列なら最下段 */
-export function getStackLandingRow(board: Board, col: number): number | null {
+/** 列の最上段タイルの直上に着地。空列なら最下段。満列でも上端が同値ならマージ可能 */
+export function getStackLandingRow(
+  board: Board,
+  col: number,
+  dropValue?: number,
+): number | null {
   for (let row = 0; row < GRID_ROWS; row++) {
     if (board[row][col]) {
+      if (row === 0 && dropValue !== undefined && board[row][col]!.value === dropValue) {
+        return 0;
+      }
       const landRow = row - 1;
       return landRow >= 0 ? landRow : null;
     }
@@ -101,13 +156,17 @@ export function getStackLandingRow(board: Board, col: number): number | null {
   return GRID_ROWS - 1;
 }
 
-export function canPlaceInColumn(board: Board, col: number): boolean {
-  return getStackLandingRow(board, col) !== null;
+export function canPlaceInColumn(
+  board: Board,
+  col: number,
+  dropValue?: number,
+): boolean {
+  return getStackLandingRow(board, col, dropValue) !== null;
 }
 
-export function canPlaceAnywhere(board: Board): boolean {
+export function canPlaceAnywhere(board: Board, dropValue?: number): boolean {
   for (let col = 0; col < GRID_COLS; col++) {
-    if (canPlaceInColumn(board, col)) return true;
+    if (canPlaceInColumn(board, col, dropValue)) return true;
   }
   return false;
 }
@@ -126,15 +185,43 @@ export function placePieceAt(
   return newBoard;
 }
 
-/** 配置のみ（マージはアニメーション後に段階実行） */
+export type PlaceDroppedResult =
+  | { board: Board; row: number; kind: "place" }
+  | { board: Board; row: number; kind: "mergeOnTop"; incomingTile: Tile };
+
+/** 満列の上端と同値のときは配置せずマージ待ちにする */
 export function placeDroppedPiece(
   board: Board,
   tile: Tile,
   col: number,
-): { board: Board; row: number } | null {
-  const row = getStackLandingRow(board, col);
+): PlaceDroppedResult | null {
+  const row = getStackLandingRow(board, col, tile.value);
   if (row === null) return null;
-  return { board: placePieceAt(board, tile, col, row), row };
+
+  const existing = board[row][col];
+  if (existing && existing.value === tile.value) {
+    return { board, row, kind: "mergeOnTop", incomingTile: tile };
+  }
+
+  return { board: placePieceAt(board, tile, col, row), row, kind: "place" };
+}
+
+/** 満列上端への同値ドロップ用マージステップ */
+export function createMergeOnTopStep(
+  board: Board,
+  col: number,
+  incomingTile: Tile,
+): MergeStep | null {
+  const topTile = board[0][col];
+  if (!topTile || topTile.value !== incomingTile.value) return null;
+
+  return {
+    group: [{ row: 0, col }],
+    target: { row: 0, col },
+    center: { row: 0, col },
+    mergedValue: calculateMergedValue([topTile, incomingTile]) as TileValue,
+    sourceValue: topTile.value as TileValue,
+  };
 }
 
 /** 1ステップマージ＋重力（アニメーション完了後用） */

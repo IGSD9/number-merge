@@ -135,9 +135,10 @@ export function GameBoard({
     fallingAnimation?.tile.id,
   ]);
 
+  const dropValue = currentPiece?.tile.value;
   const previewLandingRow =
-    currentPiece && canPlaceInColumn(board, DEFAULT_DROP_COL)
-      ? getStackLandingRow(board, DEFAULT_DROP_COL)
+    currentPiece && dropValue !== undefined && canPlaceInColumn(board, DEFAULT_DROP_COL, dropValue)
+      ? getStackLandingRow(board, DEFAULT_DROP_COL, dropValue)
       : null;
 
   const boardHeight =
@@ -215,7 +216,10 @@ export function GameBoard({
                     }
                     ghostTile={currentPiece?.tile ?? null}
                     canInteract={canInteract}
-                    canDrop={canPlaceInColumn(board, colIndex)}
+                    canDrop={
+                      dropValue !== undefined &&
+                      canPlaceInColumn(board, colIndex, dropValue)
+                    }
                     onTap={(col) => onTapRef.current(col)}
                   />
                 );
