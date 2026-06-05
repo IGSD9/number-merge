@@ -3,26 +3,31 @@
 import { useEffect, useState } from "react";
 import { getGameLayout, type GameLayout } from "@/lib/game/layout";
 
+const SSR_DEFAULT_WIDTH = 390;
+
 export function useGameLayout(hasNext: boolean): GameLayout {
-  const [layout, setLayout] = useState<GameLayout>(() => {
-    if (typeof window === "undefined") {
-      return getGameLayout(390, hasNext);
-    }
-    return getGameLayout(window.innerWidth, hasNext);
-  });
+  const [layout, setLayout] = useState<GameLayout>(() =>
+    getGameLayout(SSR_DEFAULT_WIDTH, hasNext),
+  );
 
   useEffect(() => {
     let frame = 0;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
     const update = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        setLayout(getGameLayout(window.innerWidth, hasNext));
-      });
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => {
+          setLayout(getGameLayout(window.innerWidth, hasNext));
+        });
+      }, 150);
     };
 
-    update();
+    setLayout(getGameLayout(window.innerWidth, hasNext));
     window.addEventListener("resize", update);
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", update);
     };

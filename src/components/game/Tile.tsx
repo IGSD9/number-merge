@@ -15,7 +15,7 @@ interface TileColorStyle {
   ring: string;
 }
 
-const TILE_COLORS: Record<TileValue, TileColorStyle> = {
+const TILE_COLORS: Partial<Record<TileValue, TileColorStyle>> = {
   2: { bg: "bg-slate-300", text: "text-slate-900", ring: "ring-slate-500/60" },
   4: { bg: "bg-sky-300", text: "text-sky-950", ring: "ring-sky-500/70" },
   8: { bg: "bg-emerald-400", text: "text-emerald-950", ring: "ring-emerald-600/70" },
@@ -29,8 +29,36 @@ const TILE_COLORS: Record<TileValue, TileColorStyle> = {
   2048: { bg: "bg-yellow-400", text: "text-yellow-950", ring: "ring-yellow-600/80" },
 };
 
-function getFontSize(value: TileValue, size: "normal" | "small"): string {
-  if (size === "small") return "text-sm";
+const HIGH_VALUE_COLORS: TileColorStyle[] = [
+  { bg: "bg-red-500", text: "text-white", ring: "ring-red-700/70" },
+  { bg: "bg-pink-600", text: "text-white", ring: "ring-pink-800/70" },
+  { bg: "bg-indigo-600", text: "text-white", ring: "ring-indigo-800/70" },
+  { bg: "bg-teal-500", text: "text-teal-950", ring: "ring-teal-700/70" },
+];
+
+const FALLBACK_COLORS: TileColorStyle = {
+  bg: "bg-gray-500",
+  text: "text-white",
+  ring: "ring-gray-600/70",
+};
+
+function getTileColors(value: number): TileColorStyle {
+  const known = TILE_COLORS[value as TileValue];
+  if (known) return known;
+
+  if (value > 2048 && value % 2 === 0) {
+    const exponent = Math.log2(value);
+    if (Number.isFinite(exponent)) {
+      return HIGH_VALUE_COLORS[Math.floor(exponent) % HIGH_VALUE_COLORS.length];
+    }
+  }
+
+  return FALLBACK_COLORS;
+}
+
+function getFontSize(value: number, size: "normal" | "small"): string {
+  if (size === "small") return value >= 1000 ? "text-xs" : "text-sm";
+  if (value >= 10000) return "text-xs";
   if (value >= 1024) return "text-base";
   if (value >= 128) return "text-lg";
   return "text-xl";
@@ -43,7 +71,7 @@ export const Tile = memo(function Tile({
   isGhost = false,
   size = "normal",
 }: TileProps) {
-  const colors = TILE_COLORS[tile.value];
+  const colors = getTileColors(tile.value);
 
   return (
     <div

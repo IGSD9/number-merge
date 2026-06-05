@@ -101,8 +101,10 @@ export function GameBoard({
   const [fallOffset, setFallOffset] = useState(0);
   const onFallCompleteRef = useRef(onFallComplete);
   const onTapRef = useRef(onColumnTap);
+  const cellSizeRef = useRef(cellSize);
   onFallCompleteRef.current = onFallComplete;
   onTapRef.current = onColumnTap;
+  cellSizeRef.current = cellSize;
 
   useEffect(() => {
     if (!fallingAnimation) {
@@ -110,7 +112,8 @@ export function GameBoard({
       return;
     }
 
-    const targetOffset = fallingAnimation.targetRow * (cellSize + GAP);
+    const stride = cellSizeRef.current + GAP;
+    const targetOffset = fallingAnimation.targetRow * stride;
     setFallOffset(0);
 
     const raf = requestAnimationFrame(() => {
@@ -130,7 +133,6 @@ export function GameBoard({
     fallingAnimation?.col,
     fallingAnimation?.targetRow,
     fallingAnimation?.tile.id,
-    cellSize,
   ]);
 
   const previewLandingRow =

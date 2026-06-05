@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getHighScore, saveHighScore } from "@/app/actions/score";
 import { ensureAnonymousSession } from "@/lib/auth/ensureAnonymousSession";
-import { getNextMergeStep, type MergeStep } from "@/lib/game/autoMerge";
+import {
+  getNextMergeStep,
+  resolveAllAutoMerges,
+  type MergeStep,
+} from "@/lib/game/autoMerge";
 import { checkStackGameOver } from "@/lib/game/gameOver";
 import { createNewGameState } from "@/lib/game/initGame";
 import {
@@ -142,60 +146,6 @@ export function useGame() {
     return () => window.removeEventListener("online", handleOnline);
   }, []);
 
-  useEffect(() => {
-    if (!gameState || gameState.isAnimating) return;
-
-    const timer = setTimeout(() => {
-      saveGameSession(gameState);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [gameState]);
-
-  useEffect(() => {
-    if (!gameState?.isAnimating) return;
-
-    const safetyTimer = setTimeout(() => {
-      fallHandledRef.current = true;
-      mergeHandledRef.current = true;
-      pendingDropRef.current = null;
-      mergeChainRef.current = null;
-      currentMergeStepRef.current = null;
-      setFallingAnimation(null);
-      setMergeAnimation(null);
-      setGameState((prev) => (prev ? { ...prev, isAnimating: false } : prev));
-    }, 5000);
-
-    return () => clearTimeout(safetyTimer);
-  }, [gameState?.isAnimating]);
-
-  useEffect(() => {
-    if (!gameState?.isGameOver || gameState.score <= 0) return;
-    if (gameState.score < initialBestScore.current) return;
-
-    const persistScore = async () => {
-      try {
-        await ensureAnonymousSession();
-        const result = await saveHighScore(gameState.score);
-        if (!result.success) {
-          savePendingScore(gameState.score);
-          return;
-        }
-
-        if (result.highScore > gameState.bestScore) {
-          saveBestScore(result.highScore);
-          setGameState((prev) =>
-            prev ? { ...prev, bestScore: result.highScore } : prev,
-          );
-        }
-      } catch {
-        savePendingScore(gameState.score);
-      }
-    };
-
-    void persistScore();
-  }, [gameState?.isGameOver, gameState?.score, gameState?.bestScore]);
-
   const finishDropCycle = useCallback(
     (
       board: GameState["board"],
@@ -234,6 +184,109 @@ export function useGame() {
     },
     [],
   );
+
+  useEffect(() => {
+    if (!gameState || gameState.isAnimating) return;
+
+    const timer = setTimeout(() => {
+      saveGameSession(gameState);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [gameState]);
+
+  useEffect(() => {
+    if (!gameState?.isAnimating) return;
+
+    const safetyTimer = setTimeout(() => {
+      fallHandledRef.current = true;
+      mergeHandledRef.current = true;
+      setFallingAnimation(null);
+      setMergeAnimation(null);
+
+      const pending = pendingDropRef.current;
+      const chain = mergeChainRef.current;
+
+      pendingDropRef.current = null;
+      mergeChainRef.current = null;
+      currentMergeStepRef.current = null;
+
+      if (chain) {
+        const { board, scoreGain } = resolveAllAutoMerges(chain.board);
+        finishDropCycle(
+          board,
+          chain.score + scoreGain,
+          Math.max(chain.bestScore, chain.score + scoreGain),
+          chain.queuedNext,
+        );
+        return;
+      }
+
+      if (pending) {
+        const placed = placeDroppedPiece(
+          pending.board,
+          pending.tile.tile,
+          pending.tile.col,
+        );
+        if (placed) {
+          const { board, scoreGain } = resolveAllAutoMerges(placed.board);
+          finishDropCycle(
+            board,
+            pending.score + scoreGain,
+            Math.max(pending.bestScore, pending.score + scoreGain),
+            pending.queuedNext,
+          );
+          return;
+        }
+      }
+
+      setGameState((prev) =>
+        prev
+          ? {
+              ...prev,
+              isAnimating: false,
+              currentPiece:
+                prev.currentPiece ??
+                (prev.isGameOver
+                  ? null
+                  : {
+                      tile: prev.nextPiece ?? generateSmartTile(prev.board),
+                      col: DEFAULT_DROP_COL,
+                    }),
+            }
+          : prev,
+      );
+    }, 5000);
+
+    return () => clearTimeout(safetyTimer);
+  }, [gameState?.isAnimating, finishDropCycle]);
+
+  useEffect(() => {
+    if (!gameState?.isGameOver || gameState.score <= 0) return;
+    if (gameState.score < initialBestScore.current) return;
+
+    const persistScore = async () => {
+      try {
+        await ensureAnonymousSession();
+        const result = await saveHighScore(gameState.score);
+        if (!result.success) {
+          savePendingScore(gameState.score);
+          return;
+        }
+
+        if (result.highScore > gameState.bestScore) {
+          saveBestScore(result.highScore);
+          setGameState((prev) =>
+            prev ? { ...prev, bestScore: result.highScore } : prev,
+          );
+        }
+      } catch {
+        savePendingScore(gameState.score);
+      }
+    };
+
+    void persistScore();
+  }, [gameState?.isGameOver, gameState?.score, gameState?.bestScore]);
 
   const startNextMergeOrFinish = useCallback(() => {
     const chain = mergeChainRef.current;
