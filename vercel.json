@@ -1,0 +1,4 @@
+{
+  "regions": ["hnd1"],
+  "buildCommand": "prisma generate && next build --webpack"
+}
