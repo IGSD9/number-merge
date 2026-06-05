@@ -44,7 +44,7 @@ export function GameScreen() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-gray-950 px-4 py-6 text-white">
+    <div className="flex min-h-screen flex-col items-center overflow-x-hidden bg-gray-950 px-4 py-6 text-white">
       <header className="mb-6 w-full max-w-sm">
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-1">
@@ -94,7 +94,7 @@ export function GameScreen() {
         </div>
       )}
 
-      <div className="flex w-fit flex-col items-stretch gap-6">
+      <div className="flex w-full max-w-sm flex-col items-stretch gap-6">
         <ScorePanel score={gameState.score} bestScore={gameState.bestScore} />
 
         <GameBoard
