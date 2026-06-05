@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Tile } from "@/components/game/Tile";
 import type { MergeAnimation } from "@/types/game";
 
@@ -12,7 +12,7 @@ interface MergeAnimationOverlayProps {
   onComplete: () => void;
 }
 
-const MERGE_BASE_MS = 220;
+const MERGE_BASE_MS = 160;
 
 export function MergeAnimationOverlay({
   animation,
@@ -22,21 +22,27 @@ export function MergeAnimationOverlay({
   onComplete,
 }: MergeAnimationOverlayProps) {
   const [converged, setConverged] = useState(false);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
   const stride = cellSize + gap;
   const centerX = boardPadding + animation.centerCol * stride + cellSize / 2;
   const centerY = boardPadding + animation.centerRow * stride + cellSize / 2;
-  const durationMs = MERGE_BASE_MS + animation.sources.length * 40;
+  const durationMs = MERGE_BASE_MS + animation.sources.length * 30;
+  const animationKey = `${animation.targetRow}-${animation.targetCol}-${animation.mergedValue}-${animation.sources.length}`;
 
   useEffect(() => {
     setConverged(false);
     const frame = requestAnimationFrame(() => setConverged(true));
-    const fallback = setTimeout(onComplete, durationMs + 60);
+    const timer = setTimeout(() => {
+      onCompleteRef.current();
+    }, durationMs + 40);
 
     return () => {
       cancelAnimationFrame(frame);
-      clearTimeout(fallback);
+      clearTimeout(timer);
     };
-  }, [animation, durationMs, onComplete]);
+  }, [animationKey, durationMs]);
 
   return (
     <>
@@ -49,28 +55,22 @@ export function MergeAnimationOverlay({
         return (
           <div
             key={`${source.row},${source.col},${index}`}
-            className="pointer-events-none absolute z-30 will-change-transform"
+            className="pointer-events-none absolute z-30"
             style={{
               width: cellSize,
               height: cellSize,
               left: startX,
               top: startY,
-              transform: `translate(${dx}px, ${dy}px) scale(${converged ? 0.75 : 1})`,
+              transform: `translate3d(${dx}px, ${dy}px, 0) scale(${converged ? 0.8 : 1})`,
               opacity: converged ? 0.85 : 1,
-              transition: `transform ${durationMs}ms cubic-bezier(0.4, 0, 0.2, 1), opacity ${durationMs}ms ease`,
-            }}
-            onTransitionEnd={(e) => {
-              if (
-                e.propertyName === "transform" &&
-                index === animation.sources.length - 1
-              ) {
-                onComplete();
-              }
+              transition: converged
+                ? `transform ${durationMs}ms cubic-bezier(0.4, 0, 0.2, 1), opacity ${durationMs}ms ease`
+                : "none",
             }}
           >
             <Tile
               tile={{
-                id: `merge-${index}`,
+                id: `merge-${animationKey}-${index}`,
                 value: source.value,
                 position: { row: source.row, col: source.col },
               }}

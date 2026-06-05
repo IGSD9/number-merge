@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { Tile as TileType, TileValue } from "@/types/game";
 
 interface TileProps {
@@ -28,10 +29,6 @@ const TILE_COLORS: Record<TileValue, TileColorStyle> = {
   2048: { bg: "bg-yellow-400", text: "text-yellow-950", ring: "ring-yellow-600/80" },
 };
 
-function getTileColors(value: TileValue): TileColorStyle {
-  return TILE_COLORS[value];
-}
-
 function getFontSize(value: TileValue, size: "normal" | "small"): string {
   if (size === "small") return "text-sm";
   if (value >= 1024) return "text-base";
@@ -39,19 +36,19 @@ function getFontSize(value: TileValue, size: "normal" | "small"): string {
   return "text-xl";
 }
 
-export function Tile({
+export const Tile = memo(function Tile({
   tile,
   isSelected = false,
   isMergeTarget = false,
   isGhost = false,
   size = "normal",
 }: TileProps) {
-  const colors = getTileColors(tile.value);
+  const colors = TILE_COLORS[tile.value];
 
   return (
     <div
       className={[
-        "flex h-full w-full items-center justify-center rounded-lg font-bold shadow-sm ring-1 transition-transform",
+        "flex h-full w-full items-center justify-center rounded-lg font-bold shadow-sm ring-1",
         colors.bg,
         colors.text,
         colors.ring,
@@ -66,4 +63,4 @@ export function Tile({
       {tile.value}
     </div>
   );
-}
+});

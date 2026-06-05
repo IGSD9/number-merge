@@ -143,9 +143,31 @@ export function useGame() {
   }, []);
 
   useEffect(() => {
-    if (!gameState) return;
-    saveGameSession(gameState);
+    if (!gameState || gameState.isAnimating) return;
+
+    const timer = setTimeout(() => {
+      saveGameSession(gameState);
+    }, 300);
+
+    return () => clearTimeout(timer);
   }, [gameState]);
+
+  useEffect(() => {
+    if (!gameState?.isAnimating) return;
+
+    const safetyTimer = setTimeout(() => {
+      fallHandledRef.current = true;
+      mergeHandledRef.current = true;
+      pendingDropRef.current = null;
+      mergeChainRef.current = null;
+      currentMergeStepRef.current = null;
+      setFallingAnimation(null);
+      setMergeAnimation(null);
+      setGameState((prev) => (prev ? { ...prev, isAnimating: false } : prev));
+    }, 5000);
+
+    return () => clearTimeout(safetyTimer);
+  }, [gameState?.isAnimating]);
 
   useEffect(() => {
     if (!gameState?.isGameOver || gameState.score <= 0) return;

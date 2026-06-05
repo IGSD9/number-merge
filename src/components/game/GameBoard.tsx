@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { MergeAnimationOverlay } from "@/components/game/MergeAnimationOverlay";
 import { Tile } from "@/components/game/Tile";
 import {
@@ -12,6 +12,7 @@ import {
   GRID_COLS,
   GRID_ROWS,
   type Board,
+  type CellPosition,
   type FallingAnimation,
   type FallingPiece,
   type MergeAnimation,
@@ -34,8 +35,8 @@ interface GameBoardProps {
 const BOARD_PADDING = 8;
 const GAP = 4;
 const PREVIEW_ROWS = 1;
-const FALL_BASE_MS = 180;
-const FALL_PER_ROW_MS = 55;
+const FALL_BASE_MS = 140;
+const FALL_PER_ROW_MS = 40;
 const SCREEN_PADDING = 32;
 const NEXT_GAP = 8;
 const NEXT_MIN_WIDTH = 44;
@@ -43,10 +44,58 @@ const NEXT_MIN_WIDTH = 44;
 function calcCellSize(viewportWidth: number, hasNext: boolean): number {
   const nextReserve = hasNext ? NEXT_MIN_WIDTH + NEXT_GAP : 0;
   const available =
-    viewportWidth - SCREEN_PADDING - nextReserve - BOARD_PADDING * 2 - (GRID_COLS - 1) * GAP;
+    viewportWidth -
+    SCREEN_PADDING -
+    nextReserve -
+    BOARD_PADDING * 2 -
+    (GRID_COLS - 1) * GAP;
   const fromWidth = Math.floor(available / GRID_COLS);
   return Math.min(Math.max(fromWidth, 44), 64);
 }
+
+interface BoardCellProps {
+  pos: CellPosition;
+  tile: TileType | null;
+  isMerging: boolean;
+  isGhost: boolean;
+  ghostTile: TileType | null;
+  canInteract: boolean;
+  canDrop: boolean;
+  onTap: (col: number) => void;
+}
+
+const BoardCell = memo(function BoardCell({
+  pos,
+  tile,
+  isMerging,
+  isGhost,
+  ghostTile,
+  canInteract,
+  canDrop,
+  onTap,
+}: BoardCellProps) {
+  return (
+    <div
+      className={[
+        "relative rounded-lg bg-gray-800/60",
+        canInteract && canDrop ? "cursor-pointer" : "cursor-default",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        if (!canInteract || !canDrop) return;
+        onTap(pos.col);
+      }}
+    >
+      {isGhost && ghostTile ? (
+        <Tile tile={ghostTile} isGhost />
+      ) : tile && !isMerging ? (
+        <Tile tile={tile} />
+      ) : null}
+    </div>
+  );
+});
 
 export function GameBoard({
   board,
@@ -60,19 +109,28 @@ export function GameBoard({
   isAnimating,
   isGameOver,
 }: GameBoardProps) {
-  const boardRef = useRef<HTMLDivElement>(null);
   const [cellSize, setCellSize] = useState(56);
-  const [hoverCol, setHoverCol] = useState<number | null>(null);
   const [fallOffset, setFallOffset] = useState(0);
+  const onFallCompleteRef = useRef(onFallComplete);
+  const onTapRef = useRef(onColumnTap);
+  onFallCompleteRef.current = onFallComplete;
+  onTapRef.current = onColumnTap;
 
   useEffect(() => {
+    let frame = 0;
     const updateSize = () => {
-      setCellSize(calcCellSize(window.innerWidth, !!nextPiece));
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        setCellSize(calcCellSize(window.innerWidth, !!nextPiece));
+      });
     };
 
     updateSize();
     window.addEventListener("resize", updateSize);
-    return () => window.removeEventListener("resize", updateSize);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updateSize);
+    };
   }, [nextPiece]);
 
   useEffect(() => {
@@ -81,24 +139,32 @@ export function GameBoard({
       return;
     }
 
+    const targetOffset = fallingAnimation.targetRow * (cellSize + GAP);
     setFallOffset(0);
-    const frame = requestAnimationFrame(() => {
-      setFallOffset(fallingAnimation.targetRow * (cellSize + GAP));
+
+    const raf = requestAnimationFrame(() => {
+      setFallOffset(targetOffset);
     });
 
     const duration = FALL_BASE_MS + fallingAnimation.targetRow * FALL_PER_ROW_MS;
-    const fallback = setTimeout(onFallComplete, duration + 80);
+    const timer = setTimeout(() => {
+      onFallCompleteRef.current();
+    }, duration + 50);
 
     return () => {
-      cancelAnimationFrame(frame);
-      clearTimeout(fallback);
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
     };
-  }, [fallingAnimation, cellSize, onFallComplete]);
+  }, [
+    fallingAnimation?.col,
+    fallingAnimation?.targetRow,
+    fallingAnimation?.tile.id,
+    cellSize,
+  ]);
 
-  const previewCol = hoverCol ?? DEFAULT_DROP_COL;
   const previewLandingRow =
-    currentPiece && canPlaceInColumn(board, previewCol)
-      ? getStackLandingRow(board, previewCol)
+    currentPiece && canPlaceInColumn(board, DEFAULT_DROP_COL)
+      ? getStackLandingRow(board, DEFAULT_DROP_COL)
       : null;
 
   const boardWidth =
@@ -113,14 +179,15 @@ export function GameBoard({
 
   const canInteract = !isGameOver && !isAnimating && !!currentPiece;
 
-  const mergingCells = new Set(
-    mergeAnimation?.sources.map((s) => `${s.row},${s.col}`) ?? [],
+  const mergingCells = useMemo(
+    () => new Set(mergeAnimation?.sources.map((s) => `${s.row},${s.col}`) ?? []),
+    [mergeAnimation],
   );
 
   const nextPieceSize = Math.max(cellSize * 0.75, NEXT_MIN_WIDTH);
 
   return (
-    <div className="mx-auto flex w-full max-w-full items-start justify-center gap-2">
+    <div className="mx-auto flex w-full max-w-full touch-manipulation items-start justify-center gap-2">
       <div className="shrink-0" style={{ width: boardWidth }}>
         <div
           className="relative mb-2"
@@ -142,7 +209,6 @@ export function GameBoard({
         </div>
 
         <div
-          ref={boardRef}
           className="relative touch-none rounded-xl bg-gray-900 p-2 select-none"
           style={{
             width: boardWidth,
@@ -160,48 +226,26 @@ export function GameBoard({
           >
             {board.map((row, rowIndex) =>
               row.map((tile, colIndex) => {
+                const pos = { row: rowIndex, col: colIndex };
                 const cellKey = `${rowIndex},${colIndex}`;
-                const isMerging = mergingCells.has(cellKey);
-                const isGhost =
-                  previewLandingRow !== null &&
-                  previewCol === colIndex &&
-                  rowIndex === previewLandingRow &&
-                  currentPiece &&
-                  canInteract;
-
-                const isColumnHighlight =
-                  hoverCol === colIndex &&
-                  canInteract &&
-                  canPlaceInColumn(board, colIndex);
 
                 return (
-                  <div
+                  <BoardCell
                     key={cellKey}
-                    className={[
-                      "relative rounded-lg bg-gray-800/60 transition-colors",
-                      isColumnHighlight
-                        ? "bg-indigo-900/40 ring-1 ring-indigo-400/40"
-                        : "",
-                      canInteract && canPlaceInColumn(board, colIndex)
-                        ? "cursor-pointer active:scale-95"
-                        : "cursor-default",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    onPointerEnter={() => setHoverCol(colIndex)}
-                    onPointerLeave={() => setHoverCol(null)}
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      if (!canInteract || !canPlaceInColumn(board, colIndex)) return;
-                      onColumnTap(colIndex);
-                    }}
-                  >
-                    {isGhost ? (
-                      <Tile tile={currentPiece.tile} isGhost />
-                    ) : tile && !isMerging ? (
-                      <Tile tile={tile} />
-                    ) : null}
-                  </div>
+                    pos={pos}
+                    tile={tile}
+                    isMerging={mergingCells.has(cellKey)}
+                    isGhost={
+                      previewLandingRow === rowIndex &&
+                      colIndex === DEFAULT_DROP_COL &&
+                      !!currentPiece &&
+                      canInteract
+                    }
+                    ghostTile={currentPiece?.tile ?? null}
+                    canInteract={canInteract}
+                    canDrop={canPlaceInColumn(board, colIndex)}
+                    onTap={(col) => onTapRef.current(col)}
+                  />
                 );
               }),
             )}
@@ -209,17 +253,17 @@ export function GameBoard({
 
           {fallingAnimation && (
             <div
-              className="pointer-events-none absolute z-20 will-change-transform"
+              className="pointer-events-none absolute z-20"
               style={{
                 width: cellSize,
                 height: cellSize,
                 left: BOARD_PADDING + fallingAnimation.col * (cellSize + GAP),
                 top: BOARD_PADDING,
-                transform: `translateY(${fallOffset}px)`,
-                transition: `transform ${fallDurationMs}ms cubic-bezier(0.33, 1, 0.68, 1)`,
-              }}
-              onTransitionEnd={(e) => {
-                if (e.propertyName === "transform") onFallComplete();
+                transform: `translate3d(0, ${fallOffset}px, 0)`,
+                transition:
+                  fallDurationMs > 0
+                    ? `transform ${fallDurationMs}ms cubic-bezier(0.33, 1, 0.68, 1)`
+                    : "none",
               }}
             >
               <Tile tile={fallingAnimation.tile} />
