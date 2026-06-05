@@ -101,7 +101,7 @@ export function ScoreRegisterModal({
 
   if (resultMessage) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
         <div className="w-full max-w-sm rounded-2xl bg-gray-900 p-6 text-center text-white shadow-xl">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-500/20">
             <Trophy className="h-6 w-6 text-yellow-400" />

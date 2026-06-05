@@ -16,8 +16,8 @@ import {
 } from "@/lib/game/gameSession";
 import {
   applyMergeStepWithGravity,
-  canPlaceAnywhere,
   canPlaceInColumn,
+  checkDropGameOver,
   createMergeOnTopStep,
   DEFAULT_DROP_COL,
   generateSmartTile,
@@ -48,13 +48,6 @@ function loadBestScore(): number {
 
 function saveBestScore(score: number): void {
   localStorage.setItem(BEST_SCORE_KEY, String(score));
-}
-
-function resolveGameOver(
-  board: GameState["board"],
-  nextTileValue: number,
-): boolean {
-  return !canPlaceAnywhere(board, nextTileValue);
 }
 
 function toMergeAnimation(step: MergeStep): MergeAnimation {
@@ -119,11 +112,21 @@ export function useGame() {
       const saved = loadGameSession();
 
       if (saved) {
-        setGameState({
+        const restored = {
           ...saved,
           isAnimating: false,
           currentPath: null,
-        });
+        };
+        if (
+          !restored.isGameOver &&
+          restored.currentPiece &&
+          checkDropGameOver(restored.board, restored.currentPiece.tile.value)
+        ) {
+          restored.isGameOver = true;
+          restored.currentPiece = null;
+          restored.nextPiece = null;
+        }
+        setGameState(restored);
         initialBestScore.current = saved.bestScore;
       } else {
         setGameState(createNewGameState(0));
@@ -173,7 +176,7 @@ export function useGame() {
     ) => {
       mergeChainRef.current = null;
       const promoted = queuedNext ?? generateSmartTile(board);
-      const isGameOver = resolveGameOver(board, promoted.value);
+      const isGameOver = checkDropGameOver(board, promoted.value);
       const nextBestScore = Math.max(bestScore, score);
 
       if (nextBestScore > bestScore) {

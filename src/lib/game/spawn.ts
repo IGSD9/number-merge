@@ -175,6 +175,25 @@ export function canPlaceAnywhere(board: Board, dropValue?: number): boolean {
   return false;
 }
 
+/** 全マスが埋まっているか */
+export function isBoardFull(board: Board): boolean {
+  for (let row = 0; row < GRID_ROWS; row++) {
+    for (let col = 0; col < GRID_COLS; col++) {
+      if (!board[row][col]) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * ゲームオーバー: マスがすべて埋まり、
+ * 落とす数字とマージできる列がない
+ */
+export function checkDropGameOver(board: Board, dropValue: number): boolean {
+  if (!isBoardFull(board)) return false;
+  return !canPlaceAnywhere(board, dropValue);
+}
+
 export function placePieceAt(
   board: Board,
   tile: Tile,

@@ -128,20 +128,21 @@ export function GameScreen() {
         />
       )}
 
-      {showScoreRegister && (
-        <ScoreRegisterModal
-          score={Math.max(gameState.score, gameState.bestScore)}
-          onRegister={registerScore}
-          onClose={() => setShowScoreRegister(false)}
-        />
-      )}
-
       {gameState.isGameOver && (
         <GameOverModal
           score={gameState.score}
           bestScore={gameState.bestScore}
           isNewRecord={isNewRecord}
+          onRegister={() => setShowScoreRegister(true)}
           onRestart={restart}
+        />
+      )}
+
+      {showScoreRegister && (
+        <ScoreRegisterModal
+          score={Math.max(gameState.score, gameState.bestScore)}
+          onRegister={registerScore}
+          onClose={() => setShowScoreRegister(false)}
         />
       )}
     </div>
