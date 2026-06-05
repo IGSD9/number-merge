@@ -15,11 +15,14 @@ export function GameScreen() {
   const router = useRouter();
   const {
     gameState,
+    fallingAnimation,
+    mergeAnimation,
     isLoading,
     registrationNotice,
     clearRegistrationNotice,
-    handlers,
-    currentPath,
+    dropAtColumn,
+    completeFall,
+    completeMergeAnimation,
     restart,
     abandonGame,
     registerScore,
@@ -74,7 +77,7 @@ export function GameScreen() {
         </div>
         <div className="text-center">
           <h1 className="text-2xl font-bold tracking-tight">Number Merge</h1>
-          <p className="mt-1 text-sm text-gray-400">同じ数字を一筆書きで繋いでマージ</p>
+          <p className="mt-1 text-sm text-gray-400">マスをタップして数字を落とす</p>
         </div>
       </header>
 
@@ -91,23 +94,26 @@ export function GameScreen() {
         </div>
       )}
 
-      <ScorePanel score={gameState.score} bestScore={gameState.bestScore} />
+      <div className="flex w-fit flex-col items-stretch gap-6">
+        <ScorePanel score={gameState.score} bestScore={gameState.bestScore} />
 
-      <div className="mt-6">
         <GameBoard
           board={gameState.board}
-          currentPath={currentPath}
-          onPointerDown={handlers.onPointerDown}
-          onPointerMove={handlers.onPointerMove}
-          onPointerUp={handlers.onPointerUp}
-          onPointerCancel={handlers.onPointerCancel}
+          currentPiece={gameState.currentPiece}
+          nextPiece={gameState.nextPiece}
+          fallingAnimation={fallingAnimation}
+          mergeAnimation={mergeAnimation}
+          onColumnTap={dropAtColumn}
+          onFallComplete={completeFall}
+          onMergeAnimationComplete={completeMergeAnimation}
           isAnimating={gameState.isAnimating}
+          isGameOver={gameState.isGameOver}
         />
-      </div>
 
-      <p className="mt-4 text-center text-xs text-gray-500">
-        2つ以上のタイルを繋いで離すとマージされます
-      </p>
+        <p className="text-center text-xs text-gray-500">
+          縦・横でつながった同じ数字はまとめてマージ（例: 4+4+4→16）
+        </p>
+      </div>
 
       {showHomeConfirm && (
         <HomeConfirmModal

@@ -47,10 +47,11 @@ export function posToKey(pos: CellPosition): string {
   return `${pos.row},${pos.col}`;
 }
 
+/** 縦横のみ隣接（斜めは不可） */
 export function isAdjacent(a: CellPosition, b: CellPosition): boolean {
   const rowDiff = Math.abs(a.row - b.row);
   const colDiff = Math.abs(a.col - b.col);
-  return rowDiff <= 1 && colDiff <= 1 && !(rowDiff === 0 && colDiff === 0);
+  return rowDiff + colDiff === 1;
 }
 
 export function isValidPosition(pos: CellPosition): boolean {

@@ -3,23 +3,35 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getHighScore, saveHighScore } from "@/app/actions/score";
 import { ensureAnonymousSession } from "@/lib/auth/ensureAnonymousSession";
-import { applyGravityAndRefill } from "@/lib/game/gravity";
-import { checkGameOver } from "@/lib/game/gameOver";
-import { createEmptyBoard, initializeBoard } from "@/lib/game/board";
+import { getNextMergeStep, type MergeStep } from "@/lib/game/autoMerge";
+import { checkStackGameOver } from "@/lib/game/gameOver";
+import { createNewGameState } from "@/lib/game/initGame";
 import {
   clearGameSession,
   loadGameSession,
   saveGameSession,
 } from "@/lib/game/gameSession";
-import { executeMerge } from "@/lib/game/merge";
+import {
+  applyMergeStepWithGravity,
+  canPlaceAnywhere,
+  canPlaceInColumn,
+  DEFAULT_DROP_COL,
+  generateSmartTile,
+  getStackLandingRow,
+  placeDroppedPiece,
+} from "@/lib/game/spawn";
 import { buildRegisterMessage } from "@/lib/score/registerMessage";
 import {
   consumeRegistrationResult,
   savePendingScore,
   syncPendingScore,
 } from "@/lib/offline/syncScore";
-import { useTouchPath } from "@/hooks/useTouchPath";
-import type { GameState, MergePath } from "@/types/game";
+import type {
+  CellPosition,
+  FallingAnimation,
+  GameState,
+  MergeAnimation,
+} from "@/types/game";
 
 const BEST_SCORE_KEY = "number-merge:best-score";
 
@@ -33,12 +45,50 @@ function saveBestScore(score: number): void {
   localStorage.setItem(BEST_SCORE_KEY, String(score));
 }
 
+function resolveGameOver(board: GameState["board"]): boolean {
+  return checkStackGameOver(board) || !canPlaceAnywhere(board);
+}
+
+function toMergeAnimation(step: MergeStep): MergeAnimation {
+  return {
+    sources: step.group.map((pos) => ({
+      row: pos.row,
+      col: pos.col,
+      value: step.sourceValue,
+    })),
+    centerRow: step.center.row,
+    centerCol: step.center.col,
+    mergedValue: step.mergedValue,
+    targetRow: step.target.row,
+    targetCol: step.target.col,
+  };
+}
+
 export function useGame() {
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const [fallingAnimation, setFallingAnimation] = useState<FallingAnimation | null>(
+    null,
+  );
+  const [mergeAnimation, setMergeAnimation] = useState<MergeAnimation | null>(null);
   const [registrationNotice, setRegistrationNotice] = useState<string | null>(
     null,
   );
   const initialBestScore = useRef(0);
+  const pendingDropRef = useRef<{
+    tile: { tile: NonNullable<GameState["currentPiece"]>["tile"]; col: number };
+    board: GameState["board"];
+    score: number;
+    bestScore: number;
+  } | null>(null);
+  const mergeChainRef = useRef<{
+    board: GameState["board"];
+    score: number;
+    bestScore: number;
+    priorityPos?: CellPosition;
+  } | null>(null);
+  const currentMergeStepRef = useRef<MergeStep | null>(null);
+  const fallHandledRef = useRef(false);
+  const mergeHandledRef = useRef(false);
 
   useEffect(() => {
     const init = async () => {
@@ -52,14 +102,7 @@ export function useGame() {
         });
         initialBestScore.current = saved.bestScore;
       } else {
-        setGameState({
-          board: initializeBoard(),
-          score: 0,
-          bestScore: 0,
-          isGameOver: false,
-          isAnimating: false,
-          currentPath: null,
-        });
+        setGameState(createNewGameState(0));
       }
 
       await ensureAnonymousSession();
@@ -129,55 +172,175 @@ export function useGame() {
     void persistScore();
   }, [gameState?.isGameOver, gameState?.score, gameState?.bestScore]);
 
-  const handleMergeComplete = useCallback((path: MergePath) => {
-    setGameState((prev) => {
-      if (!prev || prev.isGameOver || prev.isAnimating) return prev;
+  const finishDropCycle = useCallback(
+    (board: GameState["board"], score: number, bestScore: number) => {
+      mergeChainRef.current = null;
+      const isGameOver = resolveGameOver(board);
+      const promoted = generateSmartTile(board);
+      const newNext = isGameOver ? null : generateSmartTile(board);
+      const nextBestScore = Math.max(bestScore, score);
 
-      try {
-        const { newBoard, scoreGain } = executeMerge(prev.board, path);
-        const nextScore = prev.score + scoreGain;
-        const finalBoard = applyGravityAndRefill(newBoard);
-        const isGameOver = checkGameOver(finalBoard);
-        const nextBestScore = Math.max(prev.bestScore, nextScore);
+      if (nextBestScore > bestScore) {
+        saveBestScore(nextBestScore);
+      }
 
-        if (nextBestScore > prev.bestScore) {
-          saveBestScore(nextBestScore);
-        }
-
+      setGameState((prev) => {
+        if (!prev) return prev;
         return {
-          board: finalBoard,
-          score: nextScore,
+          ...prev,
+          board,
+          score,
           bestScore: nextBestScore,
           isGameOver,
           isAnimating: false,
           currentPath: null,
+          currentPiece: isGameOver
+            ? null
+            : { tile: promoted, col: DEFAULT_DROP_COL },
+          nextPiece: newNext,
         };
-      } catch {
-        return prev;
+      });
+    },
+    [],
+  );
+
+  const startNextMergeOrFinish = useCallback(() => {
+    const chain = mergeChainRef.current;
+    if (!chain) return;
+
+    const step = getNextMergeStep(chain.board, chain.priorityPos);
+    chain.priorityPos = undefined;
+
+    if (!step) {
+      finishDropCycle(chain.board, chain.score, chain.bestScore);
+      return;
+    }
+
+    mergeHandledRef.current = false;
+    currentMergeStepRef.current = step;
+    setMergeAnimation(toMergeAnimation(step));
+  }, [finishDropCycle]);
+
+  const dropAtColumn = useCallback(
+    (col: number) => {
+      if (
+        !gameState ||
+        gameState.isGameOver ||
+        gameState.isAnimating ||
+        !gameState.currentPiece
+      ) {
+        return;
       }
-    });
-  }, []);
+      if (!canPlaceInColumn(gameState.board, col)) return;
 
-  const board = gameState?.board ?? createEmptyBoard();
+      const targetRow = getStackLandingRow(gameState.board, col);
+      if (targetRow === null) return;
 
-  const { currentPath, handlers } = useTouchPath({
-    board,
-    onMergeComplete: handleMergeComplete,
-    disabled: !gameState || gameState.isGameOver || gameState.isAnimating,
-  });
+      fallHandledRef.current = false;
+      pendingDropRef.current = {
+        tile: { tile: gameState.currentPiece.tile, col },
+        board: gameState.board,
+        score: gameState.score,
+        bestScore: gameState.bestScore,
+      };
+
+      setFallingAnimation({
+        tile: gameState.currentPiece.tile,
+        col,
+        targetRow,
+      });
+
+      setGameState((prev) =>
+        prev ? { ...prev, isAnimating: true, currentPiece: null } : prev,
+      );
+    },
+    [gameState],
+  );
+
+  const completeFall = useCallback(() => {
+    if (fallHandledRef.current) return;
+
+    const pending = pendingDropRef.current;
+    if (!pending?.tile) {
+      setFallingAnimation(null);
+      return;
+    }
+
+    fallHandledRef.current = true;
+    pendingDropRef.current = null;
+    setFallingAnimation(null);
+
+    const placed = placeDroppedPiece(
+      pending.board,
+      pending.tile.tile,
+      pending.tile.col,
+    );
+
+    if (!placed) {
+      setGameState((prev) =>
+        prev ? { ...prev, isAnimating: false } : prev,
+      );
+      return;
+    }
+
+    mergeChainRef.current = {
+      board: placed.board,
+      score: pending.score,
+      bestScore: pending.bestScore,
+      priorityPos: { row: placed.row, col: pending.tile.col },
+    };
+
+    setGameState((prev) =>
+      prev ? { ...prev, board: placed.board } : prev,
+    );
+
+    startNextMergeOrFinish();
+  }, [startNextMergeOrFinish]);
+
+  const completeMergeAnimation = useCallback(() => {
+    if (mergeHandledRef.current) return;
+
+    const chain = mergeChainRef.current;
+    const step = currentMergeStepRef.current;
+    if (!chain || !step) {
+      setMergeAnimation(null);
+      return;
+    }
+
+    mergeHandledRef.current = true;
+
+    const { board, scoreGain } = applyMergeStepWithGravity(chain.board, step);
+    const nextScore = chain.score + scoreGain;
+    const nextBestScore = Math.max(chain.bestScore, nextScore);
+
+    mergeChainRef.current = {
+      board,
+      score: nextScore,
+      bestScore: nextBestScore,
+    };
+
+    currentMergeStepRef.current = null;
+    setMergeAnimation(null);
+
+    setGameState((prev) =>
+      prev
+        ? { ...prev, board, score: nextScore, bestScore: nextBestScore }
+        : prev,
+    );
+
+    startNextMergeOrFinish();
+  }, [startNextMergeOrFinish]);
 
   const restart = useCallback(() => {
     clearGameSession();
+    setFallingAnimation(null);
+    setMergeAnimation(null);
+    pendingDropRef.current = null;
+    mergeChainRef.current = null;
+    currentMergeStepRef.current = null;
     setGameState((prev) => {
       if (!prev) return prev;
-      return {
-        board: initializeBoard(),
-        score: 0,
-        bestScore: prev.bestScore,
-        isGameOver: false,
-        isAnimating: false,
-        currentPath: null,
-      };
+      return createNewGameState(prev.bestScore);
     });
   }, []);
 
@@ -229,12 +392,15 @@ export function useGame() {
   );
 
   return {
-    gameState: gameState ? { ...gameState, currentPath } : null,
+    gameState,
+    fallingAnimation,
+    mergeAnimation,
     isLoading: gameState === null,
     registrationNotice,
     clearRegistrationNotice: () => setRegistrationNotice(null),
-    handlers,
-    currentPath,
+    dropAtColumn,
+    completeFall,
+    completeMergeAnimation,
     restart,
     abandonGame,
     registerScore,

@@ -7,7 +7,7 @@ interface ScorePanelProps {
 
 export function ScorePanel({ score, bestScore }: ScorePanelProps) {
   return (
-    <div className="flex w-full max-w-sm items-center justify-between gap-4 rounded-xl bg-gray-800 px-4 py-3 text-white">
+    <div className="flex w-full items-center justify-between gap-4 rounded-xl bg-gray-800 px-4 py-3 text-white">
       <div>
         <p className="text-xs uppercase tracking-wide text-gray-400">Score</p>
         <p className="text-2xl font-bold tabular-nums">{score.toLocaleString()}</p>

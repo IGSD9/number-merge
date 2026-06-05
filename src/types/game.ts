@@ -39,6 +39,12 @@ export interface MergePath {
   positions: CellPosition[];
 }
 
+/** 落下待ちのピース */
+export interface FallingPiece {
+  tile: Tile;
+  col: number;
+}
+
 /** ゲーム状態 */
 export interface GameState {
   board: Board;
@@ -47,19 +53,39 @@ export interface GameState {
   isGameOver: boolean;
   isAnimating: boolean;
   currentPath: MergePath | null;
+  /** 今落とすピース（グリッド上に未配置） */
+  currentPiece: FallingPiece | null;
+  /** 次に降ってくるピース */
+  nextPiece: Tile | null;
 }
 
-/** 8方向オフセット */
-export const DIRECTIONS: CellPosition[] = [
+/** 縦横4方向オフセット */
+export const ORTHOGONAL_DIRECTIONS: CellPosition[] = [
   { row: -1, col: 0 },
   { row: 1, col: 0 },
   { row: 0, col: -1 },
   { row: 0, col: 1 },
-  { row: -1, col: -1 },
-  { row: -1, col: 1 },
-  { row: 1, col: -1 },
-  { row: 1, col: 1 },
 ];
+
+/** @deprecated ORTHOGONAL_DIRECTIONS を使用 */
+export const DIRECTIONS = ORTHOGONAL_DIRECTIONS;
+
+/** 落下アニメーション中のピース */
+export interface FallingAnimation {
+  tile: Tile;
+  col: number;
+  targetRow: number;
+}
+
+/** マージ集約アニメーション */
+export interface MergeAnimation {
+  sources: { row: number; col: number; value: TileValue }[];
+  centerRow: number;
+  centerCol: number;
+  mergedValue: TileValue;
+  targetRow: number;
+  targetCol: number;
+}
 
 export interface SaveScoreResult {
   success: boolean;

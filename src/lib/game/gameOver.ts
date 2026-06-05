@@ -52,3 +52,11 @@ export function hasValidMove(board: Board): boolean {
 export function checkGameOver(board: Board): boolean {
   return !hasValidMove(board);
 }
+
+/** 全列が満杯でこれ以上落とせない */
+export function checkStackGameOver(board: Board): boolean {
+  for (let col = 0; col < GRID_COLS; col++) {
+    if (!board[0][col]) return false;
+  }
+  return true;
+}

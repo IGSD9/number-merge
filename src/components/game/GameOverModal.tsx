@@ -17,7 +17,7 @@ export function GameOverModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="w-full max-w-sm rounded-2xl bg-gray-900 p-6 text-center text-white shadow-xl">
         <h2 className="text-2xl font-bold">Game Over</h2>
-        <p className="mt-2 text-gray-400">これ以上マージできるタイルがありません</p>
+        <p className="mt-2 text-gray-400">マスがいっぱいになりました</p>
 
         <div className="mt-6 space-y-2">
           <p className="text-sm text-gray-400">スコア</p>

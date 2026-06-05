@@ -2,8 +2,10 @@ import type { Tile as TileType, TileValue } from "@/types/game";
 
 interface TileProps {
   tile: TileType;
-  isSelected: boolean;
-  isMergeTarget: boolean;
+  isSelected?: boolean;
+  isMergeTarget?: boolean;
+  isGhost?: boolean;
+  size?: "normal" | "small";
 }
 
 const TILE_COLORS: Record<number, { bg: string; text: string }> = {
@@ -24,7 +26,13 @@ function getTileColors(value: TileValue) {
   return TILE_COLORS[value] ?? { bg: "bg-indigo-400", text: "text-white" };
 }
 
-export function Tile({ tile, isSelected, isMergeTarget }: TileProps) {
+export function Tile({
+  tile,
+  isSelected = false,
+  isMergeTarget = false,
+  isGhost = false,
+  size = "normal",
+}: TileProps) {
   const colors = getTileColors(tile.value);
 
   return (
@@ -33,6 +41,8 @@ export function Tile({ tile, isSelected, isMergeTarget }: TileProps) {
         "flex h-full w-full items-center justify-center rounded-lg font-bold transition-transform",
         colors.bg,
         colors.text,
+        size === "small" ? "text-sm" : "",
+        isGhost ? "opacity-40 ring-1 ring-white/50" : "",
         isSelected ? "scale-105 ring-2 ring-white" : "",
         isMergeTarget ? "ring-2 ring-yellow-300" : "",
       ]
