@@ -124,13 +124,18 @@ export function generateSmartTile(
 
   const weights = allowed.map((value) => {
     const ratio = Math.log2(value) / maxLog;
-    // 大きい数字ほど強く出現（指数・倍率を上げ、小数字の底上げを下げる）
-    let weight = Math.pow(ratio, 2.6) * 12 + 0.08;
+    // 大きい数字ほど強く出現。小さい数字は底上げを抑え、下位帯はさらに減衰
+    let weight = Math.pow(ratio, 3.1) * 12 + 0.03;
+    if (ratio < 0.4) {
+      weight *= 0.45;
+    } else if (ratio < 0.55) {
+      weight *= 0.75;
+    }
     if (ratio >= 0.55) {
       weight *= 1 + ratio * 0.7;
     }
     if (boardCounts.has(value)) {
-      weight *= ratio >= 0.5 ? 1.7 : 1.3;
+      weight *= ratio >= 0.5 ? 1.7 : 1.05;
     }
     if (stranded.has(value)) {
       weight *= 4;
