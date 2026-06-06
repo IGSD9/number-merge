@@ -3,6 +3,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { MergeAnimationOverlay } from "@/components/game/MergeAnimationOverlay";
 import { Tile } from "@/components/game/Tile";
+import { isMilestoneValue } from "@/lib/game/milestone";
 import { GAME_LAYOUT } from "@/lib/game/layout";
 import type { GameLayout } from "@/lib/game/layout";
 import {
@@ -78,7 +79,11 @@ const BoardCell = memo(function BoardCell({
       {isGhost && ghostTile ? (
         <Tile tile={ghostTile} isGhost />
       ) : tile && !isMerging ? (
-        <Tile tile={tile} />
+        <Tile
+          key={tile.id}
+          tile={tile}
+          celebrate={isMilestoneValue(tile.value)}
+        />
       ) : null}
     </div>
   );

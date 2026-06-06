@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { isMilestoneValue } from "@/lib/game/milestone";
 import type { Tile as TileType, TileValue } from "@/types/game";
 
 interface TileProps {
@@ -7,6 +8,7 @@ interface TileProps {
   isMergeTarget?: boolean;
   isGhost?: boolean;
   size?: "normal" | "small";
+  celebrate?: boolean;
 }
 
 interface TileColorStyle {
@@ -70,13 +72,16 @@ export const Tile = memo(function Tile({
   isMergeTarget = false,
   isGhost = false,
   size = "normal",
+  celebrate = false,
 }: TileProps) {
   const colors = getTileColors(tile.value);
+  const isMilestone = !isGhost && isMilestoneValue(tile.value);
 
   return (
     <div
       className={[
-        "flex h-full w-full items-center justify-center rounded-lg font-bold shadow-sm ring-1",
+        "relative flex h-full w-full items-center justify-center rounded-lg font-bold shadow-sm ring-1",
+        celebrate && isMilestone ? "animate-milestone-pop" : "",
         colors.bg,
         colors.text,
         colors.ring,
@@ -84,11 +89,18 @@ export const Tile = memo(function Tile({
         isGhost ? "opacity-40 ring-white/50" : "",
         isSelected ? "scale-105 ring-2 ring-white" : "",
         isMergeTarget ? "ring-2 ring-yellow-300" : "",
+        isMilestone ? "animate-milestone-glow ring-yellow-300/70" : "",
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      {tile.value}
+      {isMilestone && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-lg bg-gradient-to-br from-yellow-200/25 via-transparent to-amber-300/20"
+        />
+      )}
+      <span className={isMilestone ? "relative z-10" : undefined}>{tile.value}</span>
     </div>
   );
 });

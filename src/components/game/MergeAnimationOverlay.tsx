@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { MilestoneBurst } from "@/components/game/MilestoneBurst";
 import { Tile } from "@/components/game/Tile";
+import { isMilestoneValue } from "@/lib/game/milestone";
 import type { MergeAnimation } from "@/types/game";
 
 interface MergeAnimationOverlayProps {
@@ -48,8 +50,21 @@ export function MergeAnimationOverlay({
     };
   }, [animationKey, durationMs]);
 
+  const targetX = boardPadding + animation.targetCol * stride;
+  const targetY = boardPadding + animation.targetRow * stride;
+  const showMilestoneBurst =
+    converged && isMilestoneValue(animation.mergedValue);
+
   return (
     <>
+      {showMilestoneBurst && (
+        <MilestoneBurst
+          value={animation.mergedValue}
+          left={targetX}
+          top={targetY}
+          size={cellSizeRef.current}
+        />
+      )}
       {animation.sources.map((source, index) => {
         const startX = boardPadding + source.col * stride;
         const startY = boardPadding + source.row * stride;
