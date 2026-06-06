@@ -47,16 +47,25 @@ function countBoardValues(board: Board): Map<number, number> {
   return counts;
 }
 
-/** ボード最大より小さい孤立タイル（1個だけ残っている数字） */
+/** ボード上位帯に対して小さく、1個だけ残っている孤立タイル */
 export function getStrandedSmallValues(board: Board): number[] {
   const max = getBoardMaxValue(board);
+  if (max <= 2) return [];
+
+  const maxLog = Math.log2(max);
   const counts = countBoardValues(board);
 
   return [...counts.entries()]
-    .filter(([value, count]) => count === 1 && value < max)
+    .filter(([value, count]) => {
+      if (count !== 1 || value >= max) return false;
+      return Math.log2(value) / maxLog <= 0.3;
+    })
     .map(([value]) => value)
     .sort((a, b) => a - b);
 }
+
+/** 孤立救済: 毎回ではなく低確率で同値を出す（最低2回は目標） */
+const STRANDED_SPAWN_CHANCE = 0.1;
 
 let spawnGuarantee: { value: number; remaining: number } | null = null;
 
@@ -103,7 +112,7 @@ function createTile(value: number, position: CellPosition): Tile {
  * - 最初は2のみ
  * - ボード最大値が上がるたびにその数字まで解禁
  * - 大きい数字ほど出やすく（上位帯はさらに出現率アップ）、小さい数字は出にくい
- * - 孤立した小さい数字がある場合、同じ数字を最低2個出す
+ * - 孤立した小さい数字がある場合、低確率で同値を出して救済（詰み防止）
  */
 export function generateSmartTile(
   board: Board,
@@ -112,33 +121,37 @@ export function generateSmartTile(
   syncSpawnGuarantee(board);
 
   if (spawnGuarantee && spawnGuarantee.remaining > 0) {
-    spawnGuarantee.remaining--;
-    return createTile(spawnGuarantee.value, position);
+    const stillStranded = getStrandedSmallValues(board).includes(
+      spawnGuarantee.value,
+    );
+    if (stillStranded && Math.random() < STRANDED_SPAWN_CHANCE) {
+      spawnGuarantee.remaining--;
+      return createTile(spawnGuarantee.value, position);
+    }
+    if (!stillStranded) {
+      spawnGuarantee = null;
+    }
   }
 
   const allowed = getAllowedSpawnValues(board);
   const maxOnBoard = getBoardMaxValue(board);
   const boardCounts = countBoardValues(board);
-  const stranded = new Set(getStrandedSmallValues(board));
   const maxLog = Math.log2(maxOnBoard);
 
   const weights = allowed.map((value) => {
     const ratio = Math.log2(value) / maxLog;
-    // 大きい数字ほど強く出現。小さい数字は底上げを抑え、下位帯はさらに減衰
-    let weight = Math.pow(ratio, 3.1) * 12 + 0.03;
+    // 大きい数字ほど強く出現。小さい数字は底上げを最小限に
+    let weight = Math.pow(ratio, 3.6) * 12 + 0.01;
     if (ratio < 0.4) {
-      weight *= 0.45;
+      weight *= 0.2;
     } else if (ratio < 0.55) {
-      weight *= 0.75;
+      weight *= 0.55;
     }
     if (ratio >= 0.55) {
-      weight *= 1 + ratio * 0.7;
+      weight *= 1 + ratio * 0.8;
     }
     if (boardCounts.has(value)) {
-      weight *= ratio >= 0.5 ? 1.7 : 1.05;
-    }
-    if (stranded.has(value)) {
-      weight *= 4;
+      weight *= ratio >= 0.5 ? 1.8 : 0.85;
     }
     return { value, weight };
   });
