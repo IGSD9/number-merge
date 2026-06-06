@@ -111,7 +111,7 @@ function createTile(value: number, position: CellPosition): Tile {
  * 出現数字:
  * - 最初は2のみ
  * - ボード最大値が上がるたびにその数字まで解禁
- * - 大きい数字ほど出やすく（上位帯はさらに出現率アップ）、小さい数字は出にくい
+ * - 大きい数字ほど出やすいが、ボード最大値は出過ぎないよう抑制
  * - 孤立した小さい数字がある場合、低確率で同値を出して救済（詰み防止）
  */
 export function generateSmartTile(
@@ -140,18 +140,30 @@ export function generateSmartTile(
 
   const weights = allowed.map((value) => {
     const ratio = Math.log2(value) / maxLog;
-    // 大きい数字ほど強く出現。小さい数字は底上げを最小限に
-    let weight = Math.pow(ratio, 3.6) * 12 + 0.01;
+    const isBoardMax = value === maxOnBoard;
+    // 大きい数字ほど出やすいが、最大値は出過ぎないよう抑える
+    let weight = Math.pow(ratio, 3.4) * 12 + 0.01;
     if (ratio < 0.4) {
       weight *= 0.2;
     } else if (ratio < 0.55) {
       weight *= 0.55;
     }
-    if (ratio >= 0.55) {
-      weight *= 1 + ratio * 0.8;
+    if (ratio >= 0.55 && ratio < 0.9) {
+      weight *= 1 + ratio * 0.5;
+    }
+    if (isBoardMax) {
+      weight *= 0.45;
+    } else if (ratio >= 0.9) {
+      weight *= 0.7;
     }
     if (boardCounts.has(value)) {
-      weight *= ratio >= 0.5 ? 1.8 : 0.85;
+      if (isBoardMax) {
+        weight *= 1.15;
+      } else if (ratio >= 0.5) {
+        weight *= 1.45;
+      } else {
+        weight *= 0.85;
+      }
     }
     return { value, weight };
   });
